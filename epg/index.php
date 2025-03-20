@@ -26,13 +26,16 @@ parse_str(str_replace('+', '%2B', parse_url($requestUrl, PHP_URL_QUERY)), $query
 
 // 获取 URL 中的 token 参数并验证
 $tokenRange = $Config['token_range'] ?? 1;
-$token = $query_params['token'] ?? '';
 $live = $query_params['live'] ?? '';
-if ($tokenRange !== 0 && $token !== $Config['token'] && 
-    (($tokenRange !== 2 && $live) || ($tokenRange !== 1 && !$live))) {
-    http_response_code(403);
-    echo '访问被拒绝：无效的 Token。';
-    exit;
+if ($tokenRange !== 0) {
+    $allowedTokens = array_map('trim', explode(',', $Config['token'] ?? ''));
+    $token = $query_params['token'] ?? '';
+    if (!in_array($token, $allowedTokens) &&  (($tokenRange !== 2 && $live) || 
+        ($tokenRange !== 1 && !$live))) {
+        http_response_code(403);
+        echo '访问被拒绝：无效的 Token。';
+        exit;
+    }
 }
 
 // 获取请求的 User-Agent 并验证
@@ -250,6 +253,7 @@ function liveFetchHandler($query_params) {
     $tvgUrl = $serverUrl . ($query_params['live'] === 'm3u' ? '/t.xml.gz' : '/');
     if ($query_params['live'] === 'm3u') {
         $content = preg_replace('/(#EXTM3U x-tvg-url=")(.*?)(")/', '$1' . $tvgUrl . '$3', $content, 1);
+        $content = str_replace("tvg-logo=\"/data/icon/", "tvg-logo=\"$serverUrl/data/icon/", $content);
     }
 
     echo $content;
