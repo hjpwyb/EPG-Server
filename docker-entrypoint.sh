@@ -48,6 +48,29 @@ cat <<EOF >> /etc/apache2/httpd.conf
 EOF
 fi
 
+# Write URL rewrite rules to conf.d/rewrite.conf
+cat <<'EOF' > /etc/apache2/conf.d/rewrite.conf
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # /tv.m3u
+    RewriteCond %{QUERY_STRING} !(^|&)type=m3u(&|$)
+    RewriteRule ^/tv\.m3u$ /index.php?type=m3u&%{QUERY_STRING} [L]
+
+    # /tv.txt
+    RewriteCond %{QUERY_STRING} !(^|&)type=txt(&|$)
+    RewriteRule ^/tv\.txt$ /index.php?type=txt&%{QUERY_STRING} [L]
+
+    # /t.xml
+    RewriteCond %{QUERY_STRING} !(^|&)type=xml(&|$)
+    RewriteRule ^/t\.xml$ /index.php?type=xml&%{QUERY_STRING} [L]
+
+    # /t.xml.gz
+    RewriteCond %{QUERY_STRING} !(^|&)type=gz(&|$)
+    RewriteRule ^/t\.xml\.gz$ /index.php?type=gz&%{QUERY_STRING} [L]
+</IfModule>
+EOF
+
 # Change Server Admin, Name, Document Root
 sed -i "s/ServerAdmin\ you@example.com/ServerAdmin\ ${SERVER_ADMIN}/" /etc/apache2/httpd.conf
 sed -i "s/#ServerName\ www.example.com:80/ServerName\ ${HTTP_SERVER_NAME}/" /etc/apache2/httpd.conf
@@ -86,11 +109,11 @@ ln -s /usr/share/zoneinfo/${TZ} /etc/localtime
 
 echo 'Running cron.php and Apache'
 
-# Add write access to /htdocs
-chmod -R o+w /htdocs
+# Change ownership of /htdocs
+chown -R apache:apache /htdocs
 
 # Start cron.php
-cd /htdocs/
+cd /htdocs
 su -s /bin/sh -c "php cron.php &" "apache"
 
 # Remove stale PID file

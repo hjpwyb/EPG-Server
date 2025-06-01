@@ -10,10 +10,13 @@ document.addEventListener('DOMContentLoaded', function() {
 document.getElementById('settingsForm').addEventListener('submit', function(event) {
     event.preventDefault();  // 阻止默认表单提交
 
-    const fields = ['update_config', 'gen_xml', 'include_future_only', 'ret_default', 'all_chs', 
+    const fields = ['update_config', 'gen_xml', 'include_future_only', 'ret_default', 'cht_to_chs', 
         'db_type', 'mysql_host', 'mysql_dbname', 'mysql_username', 'mysql_password', 'gen_list_enable', 
-        'check_update', 'token_range', 'user_agent_range', 'live_template_enable', 'live_fuzzy_match', 
-        'live_url_comment', 'live_tvg_logo_enable', 'live_tvg_id_enable', 'live_tvg_name_enable'];
+        'check_update', 'token_range', 'user_agent_range', 'debug_mode', 'ip_list_mode', 'live_template_enable', 
+        'live_fuzzy_match', 'live_url_comment', 'live_tvg_logo_enable', 'live_tvg_id_enable', 
+        'live_tvg_name_enable', 'live_source_auto_sync', 'live_channel_name_process', 'gen_live_update_time', 
+        'm3u_icon_first', 'check_ipv6', 'min_resolution_width', 'min_resolution_height', 'urls_limit','sort_by_delay', 
+        'check_speed_auto_sync', 'check_speed_interval_factor'];
 
     // 创建隐藏字段并将其添加到表单
     const form = this;
@@ -160,26 +163,21 @@ function updateMySQLFields() {
 // 显示带消息的模态框
 function showModalWithMessage(modalId, messageId = '', message = '') {
     const modal = document.getElementById(modalId);
-    if (messageId) document.getElementById(messageId).innerHTML = message;
+    if (messageId) {
+        const el = document.getElementById(messageId);
+        el && (el.tagName === 'TEXTAREA' ? el.value = message : el.innerHTML = message);
+    }
 
-    modal.style.zIndex = zIndex++;
-    modal.style.display = "block";
-
-    const closeBtn = modal.querySelector(".close");
-    closeBtn.onmousedown = () => modal.style.display = "none";
-
-    // 处理点击模态框外部关闭
-    const handleClickOutside = (event) => {
-        if (event.target === modal) {
-            modal.style.display = "none";
-            window.removeEventListener('mousedown', handleClickOutside); // 关闭后移除事件监听器
+    modal.style.cssText = `display:block;z-index:${zIndex++}`;
+    modal.querySelector('.close')?.addEventListener('mousedown', () => modal.style.display = 'none');
+    const outsideClick = e => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            window.removeEventListener('mousedown', outsideClick);
         }
     };
-
-    window.addEventListener('mousedown', handleClickOutside);
-
-    // 阻止点击模态框内部时关闭
-    modal.querySelector('.modal-content').addEventListener('mousedown', (e) => e.stopPropagation());
+    window.addEventListener('mousedown', outsideClick);
+    modal.querySelector('.modal-content')?.addEventListener('mousedown', e => e.stopPropagation());
 }
 
 // 显示消息模态框
@@ -243,6 +241,12 @@ function showModal(type, popup = true, data = '') {
             modal = document.getElementById("liveSourceManageModal");
             fetchData('manage.php?get_live_data=true', updateLiveSourceModal);
             break;
+        case 'chekspeed':
+            modal = document.getElementById("checkSpeedModal");
+            break;
+        case 'morelivesetting':
+            modal = document.getElementById("moreLiveSettingModal");
+            break;
         case 'moresetting':
             updateMySQLFields(); // 设置 MySQL 相关输入框状态
             document.getElementById('db_type').addEventListener('change', updateMySQLFields);
@@ -256,22 +260,16 @@ function showModal(type, popup = true, data = '') {
     if (!popup) {
         return;
     }
-    modal.style.zIndex = zIndex++; // 确保 modal 在最上层
-    modal.style.display = "block";
-
-    var originalOnMouseDown = window.onmousedown;
-    function handleModalClose() {
-        modal.style.display = "none";
-        window.onmousedown = originalOnMouseDown; // 恢复原事件
-    }
-    
-    closeBtn = modal.querySelector(".close");
-    closeBtn.onmousedown = handleModalClose;
-    window.onmousedown = function(event) {
-        if (event.target === modal) {
-            handleModalClose();
+    modal.style.cssText = `display:block;z-index:${zIndex++}`;
+    modal.querySelector('.close')?.addEventListener('mousedown', () => modal.style.display = 'none');
+    const outsideClick = e => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            window.removeEventListener('mousedown', outsideClick);
         }
-    }
+    };
+    window.addEventListener('mousedown', outsideClick);
+    modal.querySelector('.modal-content')?.addEventListener('mousedown', e => e.stopPropagation());
 }
 
 function fetchData(endpoint, callback) {
@@ -295,8 +293,10 @@ function showExecResult(fileName, callback, fullSize = true) {
 
     const wrapper = document.createElement('div');
     if (fullSize) {
-        wrapper.style.width = '800px';
-        wrapper.style.height = '500px';
+        wrapper.style.width = '930px';
+        wrapper.style.height = '504px';
+    } else {
+        wrapper.style.maxWidth = '600px';
     }
     wrapper.style.overflow = 'auto';
     messageContainer.appendChild(wrapper);
@@ -352,7 +352,24 @@ function showVersionLog(doCheckUpdate = false) {
 
 // 显示使用说明
 function showHelpModal() {
-    showModalWithMessage("helpModal");
+    fetch("manage.php?get_readme_content=true")
+        .then(response => response.json())
+        .then(data => {
+            showModalWithMessage("helpModal", "helpMessage", data.content);
+        });
+}
+
+// 显示捐赠图片
+function showDonationImage() {
+    const isDark = document.body.classList.contains('dark');
+    const img = isDark ? 'assets/img/buymeacofee-dark.png' : 'assets/img/buymeacofee.png';
+
+    showMessageModal('');
+    messageModalMessage.innerHTML = `
+        <img src="${img}" style="max-width:100%; display:block; margin: 0 auto; margin-top:55px;">
+        <p style="margin-top:10px; text-align:center;">感谢鼓励！</p>
+    `;
+
 }
 
 // 更新 EPG 内容
@@ -393,6 +410,299 @@ function updateCronLogContent(logData) {
         })}] ${log.log_message}`)
     .join('\n');
     logContent.scrollTop = logContent.scrollHeight;
+}
+
+let lastOffset = 0, timer = null;
+
+// 显示访问日志
+function showAccessLogModal() {
+    const box = document.getElementById("accessLogContent");
+    const modal = document.getElementById("accesslogModal");
+
+    const load = () => {
+        fetch(`manage.php?get_access_log=true&offset=${lastOffset}`)
+            .then(r => r.json())
+            .then(d => {
+                if (!d.success) return;
+
+                const pre = box.querySelector("pre");
+                if (!pre) {
+                    box.innerHTML = `<pre>${d.content || ""}</pre><div>持续刷新中...</div>`;
+                    box.scrollTop = box.scrollHeight;
+                } else if (d.changed && d.content) {
+                    const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+                    pre.innerText += d.content;
+                    if (atBottom) box.scrollTop = box.scrollHeight;
+                }
+
+                lastOffset = d.offset;
+                if (!timer) timer = setInterval(load, 1000);
+            });
+    };
+
+    modal.style.zIndex = zIndex++;
+    modal.style.display = "block";
+    load();
+
+    modal.onmousedown = e => {
+        if (e.target === modal || e.target.classList.contains("close")) {
+            modal.style.display = "none";
+            clearInterval(timer);
+            timer = null;
+        }
+    };
+}
+
+// 访问日志统计
+function showAccessStats() {
+    clearInterval(timer);
+    timer = null;
+    const modal = document.getElementById("accessStatsModal");
+    modal.style.zIndex = zIndex++;
+    modal.style.display = "block";
+    loadAccessStats();
+
+    modal.onmousedown = e => {
+        if (e.target === modal || e.target.classList.contains("close")) {
+            modal.style.display = "none";
+            showAccessLogModal();
+        }
+    };
+}
+
+let currentSort = { column: 'total', order: 'desc' };
+let cachedData = { ipData: [], dates: [], rawStats: {} };
+
+function loadAccessStats() {
+    const table = document.getElementById("accessStatsTable");
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = `<tr><td colspan="99">加载中...</td></tr>`;
+
+    const logContent = document.getElementById("accessLogContent").innerText || '';
+    const lines = logContent.split('\n').filter(line => line.trim());
+
+    const statsByDate = {};
+    const ipTotal = {};
+
+    const logRegex = /^\[(\d{4}-\d{2}-\d{2})[^\]]*\] \[(.*?)\]/;
+
+    lines.forEach(line => {
+        const match = line.match(logRegex);
+        if (!match) return;
+    
+        const [_, date, ip] = match;
+    
+        statsByDate[date] = statsByDate[date] || {};
+        statsByDate[date][ip] = (statsByDate[date][ip] || 0) + 1;
+    
+        ipTotal[ip] = (ipTotal[ip] || 0) + 1;
+    });
+
+    const ips = Object.keys(ipTotal);
+    const dates = Object.keys(statsByDate).sort();
+
+    const ipData = ips.map(ip => {
+        const counts = dates.map(date => statsByDate[date]?.[ip] || 0);
+        const total = counts.reduce((a, b) => a + b, 0);
+        return { ip, counts, total };
+    });
+
+    cachedData = { ipData, dates, rawStats: statsByDate };
+    renderAccessStatsTable();
+}
+
+function renderAccessStatsTable() {
+    const table = document.getElementById("accessStatsTable");
+    const thead = table.querySelector("thead");
+    const tbody = table.querySelector("tbody");
+    const { ipData, dates } = cachedData;
+
+    if (ipData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="99">暂无数据</td></tr>`;
+        return;
+    }
+
+    // 排序逻辑
+    ipData.sort((a, b) => {
+        const { column, order } = currentSort;
+        let result;
+
+        if (column === 'ip') {
+            result = a.ip.localeCompare(b.ip);
+        } else if (column === 'total') {
+            result = a.total - b.total;
+        } else {
+            const i = dates.indexOf(column);
+            result = a.counts[i] - b.counts[i];
+        }
+
+        return order === 'asc' ? result : -result;
+    });
+
+    // 渲染表头
+    thead.innerHTML = renderTableHeader(dates);
+
+    // 渲染表体
+    tbody.innerHTML = ipData.map(row => renderTableRow(row)).join('');
+}
+
+function renderTableHeader(dates) {
+    const arrow = col => currentSort.column === col ? (currentSort.order === 'asc' ? ' ▲' : ' ▼') : '';
+    return `
+        <tr>
+            <th onclick="sortByColumn('ip')">IP地址${arrow('ip')}</th>
+            ${dates.map(date => `<th onclick="sortByColumn('${date}')">${date.slice(5)}${arrow(date)}</th>`).join('')}
+            <th onclick="sortByColumn('total')">总计${arrow('total')}</th>
+            <th>操作</th>
+        </tr>
+    `;
+}
+
+function renderTableRow({ ip, counts, total }) {
+    const countCells = counts.map(c => `<td>${c}</td>`).join('');
+    return `
+        <tr>
+            <td><a href="#" onclick="filterLogByIp('${ip}'); return false;">${ip}</a></td>
+            ${countCells}
+            <td>${total}</td>
+            <td>
+                <button onclick="addIp('${ip}','black')" style="width: 30px; padding: 1px;">黑</button>
+                <button onclick="addIp('${ip}','white')" style="width: 30px; padding: 1px;">白</button>
+            </td>
+        </tr>
+    `;
+}
+
+function filterLogByIp(ip) {
+    const logContent = document.getElementById("accessLogContent").innerText || '';
+    const lines = logContent.split('\n').filter(line => line.includes(ip));
+    const filtered = lines.length > 0 ? lines.map(line => line.trimEnd()).join('\n') : `无记录：${ip}`;
+    showMessageModal(`
+        <div id="filteredLog" style="width:930px; height:500px; overflow:auto; font-family:monospace; white-space:pre;">${filtered.replace(/\n/g, '<br>')}</div>
+    `);
+    const d = document.getElementById("filteredLog");
+    if (d) d.scrollTop = d.scrollHeight;;
+}
+
+function addIp(ip, type) {
+    const listName = type === 'white' ? '白名单' : '黑名单';
+    if (!confirm(`确定将 ${ip} 加入${listName}？`)) return;
+
+    const file = type === 'white' ? 'ipWhiteList.txt' : 'ipBlackList.txt';
+
+    fetch(`manage.php?get_ip_list=true&file=${file}`)
+        .then(res => res.json())
+        .then(data => {
+            const set = new Set(data.list || []);
+            set.add(ip);
+
+            return fetch('manage.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    save_content_to_file: 'true',
+                    file_path: `/data/${file}`,
+                    content: [...set].join('\n')
+                })
+            });
+        })
+        .then(res => res.json())
+        .then(data => showMessageModal(data.success ? `已加入${listName}` : '保存失败'));
+}
+
+function sortByColumn(col) {
+    if (currentSort.column === col) {
+        currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort = {
+            column: col,
+            order: col === 'ip' ? 'asc' : 'desc'
+        };
+    }
+    renderAccessStatsTable();
+}
+
+// 清空访问日志
+function clearAccessLog() {
+    if (!confirm('确定清空访问日志？')) return;
+    fetch('manage.php?clear_access_log=true')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert('日志已清空');
+                document.getElementById('accessLogContent').innerHTML = '';
+            } else alert('清空失败');
+        }).catch(() => alert('请求失败'));
+}
+
+// 下载访问日志
+function downloadAccessLog() {
+    fetch('manage.php?get_access_log=true')
+        .then(res => res.json())
+        .then(data => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([data.content], {type:'text/plain'}));
+            a.download = 'access.log';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        })
+        .catch(() => alert('下载失败'));
+}
+
+// 显示 IP 列表模态框
+function showIpModal() {
+    const mode = document.getElementById('ip_list_mode').value;
+    const file = mode === '1' ? 'ipWhiteList.txt' : 'ipBlackList.txt';
+    const modeName = mode === '1' ? '白名单' : '黑名单';
+
+    fetch(`manage.php?get_ip_list=true&file=${encodeURIComponent(file)}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showModalWithMessage("ipModal", "ipListTextarea", data.list.join('\n'));
+                const textarea = document.getElementById('ipListTextarea');
+                textarea.dataset.file = file;
+                textarea.focus();
+                textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+                const h2 = document.querySelector('#ipModal h2'); // 修改标题内容
+                h2.textContent = `IP 列表：${modeName}`;
+            } else {
+                showMessageModal('读取 IP 列表失败');
+            }
+        });
+}
+
+// 保存 IP 列表
+function saveIpList() {
+    const textarea = document.getElementById('ipListTextarea');
+    const file = textarea.dataset.file || 'ipBlackList.txt';
+
+    const lines = textarea.value.split('\n').map(s => s.trim()).filter(Boolean);
+    const ipv4 = /^(25[0-5]|2\d{2}|1\d{2}|[1-9]?\d)(\.(25[0-5]|2\d{2}|1\d{2}|[1-9]?\d)){3}$/;
+    const ipv6 = /^([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}|::/;
+
+    const valid = [], invalid = [];
+
+    for (const ip of [...new Set(lines)]) {
+        if (ipv4.test(ip) || ipv6.test(ip)) valid.push(ip);
+        else invalid.push(ip);
+    }
+
+    textarea.value = valid.join('\n');
+
+    if (invalid.length) showMessageModal(`以下 IP 无效，已忽略：\n${invalid.join('\n')}`);
+
+    fetch('manage.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            save_content_to_file: 'true',
+            file_path: `/data/${file}`,
+            content: textarea.value
+        })
+    })
+    .then(res => res.json())
+    .then(data => showMessageModal(data.success ? '保存成功' : '保存失败'));
 }
 
 // 显示频道别名列表
@@ -529,10 +839,11 @@ function displayPage(data, page) {
         // 为每个单元格添加事件监听器
         row.querySelectorAll('td[contenteditable="true"]').forEach((cell, columnIndex) => {
             cell.addEventListener('input', () => {
-                const dataIndex = (currentPage - 1) * rowsPerPage + index;
+                const currentIndex = (currentPage - 1) * rowsPerPage + index;
+                const item = filteredLiveData[currentIndex]; // 当前点击的数据
+                const dataIndex = allLiveData.findIndex(d => d.tag === item.tag);
                 if (dataIndex < allLiveData.length) {
                     allLiveData[dataIndex][columns[columnIndex]] = cell.textContent.trim();
-                    
                     allLiveData[dataIndex]['modified'] = 1; // 标记修改位
                     const lastCell = cell.closest('tr').lastElementChild;
                     lastCell.textContent = '是';
@@ -544,7 +855,9 @@ function displayPage(data, page) {
         // 为 disable 和 modified 列添加点击事件，切换 "是/否"
         row.querySelectorAll('td.table-cell-clickable').forEach((cell, columnIndex) => {
             cell.addEventListener('click', () => {
-                const dataIndex = (currentPage - 1) * rowsPerPage + index;
+                const currentIndex = (currentPage - 1) * rowsPerPage + index;
+                const item = filteredLiveData[currentIndex]; // 当前点击的数据
+                const dataIndex = allLiveData.findIndex(d => d.tag === item.tag);
                 if (dataIndex < allLiveData.length) {
                     const isDisable = columnIndex === 0;
                     const field = isDisable ? 'disable' : 'modified';
@@ -575,7 +888,6 @@ function setupPagination(data) {
     paginationContainer.innerHTML = ''; // 清空分页容器
 
     const totalPages = Math.ceil(data.length / rowsPerPage);
-    document.getElementById('live-source-table-container').style.height = totalPages <= 1 ? "410px" : "375px";
     if (totalPages <= 1) return;
 
     const maxButtons = 11; // 总显示按钮数，包括“<”和“>”
@@ -618,8 +930,35 @@ function setupPagination(data) {
 }
 
 let currentPage = 1; // 当前页码
-const rowsPerPage = 100; // 每页显示的行数
 let allLiveData = []; // 用于存储直播源数据
+let filteredLiveData = []; // 搜索后的结果
+
+let rowsPerPage = parseInt(localStorage.getItem('rowsPerPage')) || 100; // 每页显示的行数
+document.getElementById('rowsPerPageSelect').value = rowsPerPage;
+
+// 更改每页显示条数
+document.getElementById('rowsPerPageSelect').addEventListener('change', (e) => {
+    rowsPerPage = parseInt(e.target.value);
+    localStorage.setItem('rowsPerPage', rowsPerPage);
+    currentPage = 1; // 重置到第一页
+    displayPage(filteredLiveData, currentPage);
+    setupPagination(filteredLiveData);
+});
+
+// 根据关键词过滤数据
+function filterLiveSourceData() {
+    const keyword = document.getElementById('liveSourceSearchInput').value.trim().toLowerCase();
+    filteredLiveData = allLiveData.filter(item =>
+        (item.channelName || '').toLowerCase().includes(keyword) ||
+        (item.groupTitle || '').toLowerCase().includes(keyword) ||
+        (item.streamUrl || '').toLowerCase().includes(keyword) ||
+        (item.tvgId || '').toLowerCase().includes(keyword) ||
+        (item.tvgName || '').toLowerCase().includes(keyword)
+    );
+    currentPage = 1;
+    displayPage(filteredLiveData, currentPage);
+    setupPagination(filteredLiveData);
+}
 
 // 更新模态框内容并初始化分页
 function updateLiveSourceModal(data) {
@@ -627,6 +966,7 @@ function updateLiveSourceModal(data) {
     document.getElementById('liveTemplateTextarea').value = data.template_content || '';
     const channels = Array.isArray(data.channels) ? data.channels : [];
     allLiveData = channels;  // 将所有数据保存在全局变量中
+    filteredLiveData = allLiveData; // 初始化过滤结果
     currentPage = 1; // 重置为第一页
     displayPage(channels, currentPage); // 显示第一页数据
     setupPagination(channels); // 初始化分页控件
@@ -662,24 +1002,6 @@ document.getElementById('liveSourceFile').addEventListener('change', function() 
     this.value = ''; // 重置文件输入框的值，确保可以连续上传相同文件
 });
 
-// 设置直播源自动同步、优化频道名开关
-function toggleStatus(toggleBtn) {
-    fetch(`manage.php?toggle_status=true&toggle_button=${toggleBtn}`)
-        .then(response => response.json())
-        .then(data => {
-            // 更新按钮显示
-            document.getElementById(toggleBtn).innerHTML = 
-                `${toggleBtn === "toggleLiveSourceSyncBtn" ? "同步更新"
-                 : toggleBtn === "toggleCheckSpeedSyncBtn" ? "同步测速"
-                 : toggleBtn === "toggleLiveChannelNameProcessBtn" ? "频道更名" : "Error"}: ${data.status === 1 ? "是" : "否"}`;
-            const syncStatus = document.getElementById("toggleLiveSourceSyncBtn").innerHTML;
-            const checkStatus = document.getElementById("toggleCheckSpeedSyncBtn").innerHTML;
-            const processStatus = document.getElementById("toggleLiveChannelNameProcessBtn").innerHTML;
-            document.getElementById('showMoreLiveSettingBtn').setAttribute('onclick', `showMoreLiveSetting('${syncStatus}', '${checkStatus}', '${processStatus}')`);
-        })
-        .catch(error => console.error("Error:", error));
-}
-
 // 保存编辑后的直播源地址
 function saveLiveSourceFile() {
     source = document.getElementById('sourceUrlTextarea');
@@ -702,23 +1024,6 @@ function saveLiveSourceFile() {
 }
 
 document.getElementById('sourceUrlTextarea').addEventListener('blur', saveLiveSourceFile);
-
-// 显示更多直播源设置
-function showMoreLiveSetting(sourceSync, checkSync, nameProcess) {
-    showMessageModal('');
-    document.getElementById('messageModalMessage').innerHTML = `
-        <div class="button-container" style="width: 380px; margin-top: 30px;">
-            <button id="toggleLiveSourceSyncBtn" onclick="toggleStatus('toggleLiveSourceSyncBtn')">${sourceSync}</button>
-            <button id="toggleCheckSpeedSyncBtn" onclick="toggleStatus('toggleCheckSpeedSyncBtn')">${checkSync}</button>
-            <button id="toggleLiveChannelNameProcessBtn" onclick="toggleStatus('toggleLiveChannelNameProcessBtn')">${nameProcess}</button>
-        </div>
-        <div class="button-container" style="margin-top: 20px;">
-            <button id="checkSourceBtn" onclick="checkSource()">测速校验</button>
-            <button id="cleanUnusedSourceBtn" onclick="cleanUnusedSource()">清理数据</button>
-            <button style="visibility: hidden;">占位</button>
-        </div>
-    `;
-}
 
 // 保存编辑后的直播源信息
 function saveLiveSourceInfo(popup = true, filePath = '') {
@@ -777,52 +1082,18 @@ function saveLiveSourceInfoAs() {
             saveLiveSourceFile();
         }
 
-        const [token, serverUrl, tokenRange] = document.getElementById('showLiveUrlBtn')
+        [token, serverUrl, tokenRange] = document.getElementById('showLiveUrlBtn')
             .getAttribute('onclick')
             .match(/\`(.*?)\`/g)
             .map(s => s.slice(1, -1));
-        var tokenStr = (tokenRange == 1 || tokenRange == 3) ? `token=${token}&` : '';
-        var m3uUrl = `${serverUrl}/index.php?${tokenStr}live=m3u&url=${fileName}`;
-        var txtUrl = `${serverUrl}/index.php?${tokenStr}live=txt&url=${fileName}`;
+        token = token.split('\n')[0];
+        var tokenStr = (tokenRange == 1 || tokenRange == 3) ? `token=${token}` : '';
+        var m3uUrl = `${serverUrl}/tv.m3u?${tokenStr}&url=${fileName}`;
+        var txtUrl = `${serverUrl}/tv.txt?${tokenStr}&url=${fileName}`;
         message = `成功另存为 ${fileName}<br>
                     M3U：<br><a href="${m3uUrl}" target="_blank">${m3uUrl}</a><br>
                     TXT：<br><a href="${txtUrl}" target="_blank">${txtUrl}`;
         showMessageModal(message);
-    };
-}
-
-// 检验每个直播源的访问速度及分辨率
-function checkSource() {
-    showMessageModal('');
-    const messageContainer = document.getElementById('messageModalMessage');
-
-    // 设置说明和开始测试、清除结果按钮
-    messageContainer.innerHTML = `
-        <div>
-        即将开始检测每个直播源的访问速度及分辨率，<br>
-        该过程可能需要一些时间，请耐心等待。<br><br>
-        注意：结果不一定准确，且暂无法解析 IPv6 源。<br><br>
-        </div>
-        <div class="button-container" style="width: 380px; margin-bottom: -10px;">
-            <button id="foregroundCheckBtn">前台测速</button>
-            <button id="backgroundCheckBtn">后台测速</button>
-            <button id="cleanCheckResultBtn">清除结果</button>
-        </div>
-    `;
-
-    // 前台测速
-    document.getElementById('foregroundCheckBtn').onclick = function () {
-        showExecResult('check.php', () => showModal('live', popup = false));
-    };
-
-    // 后台测速
-    document.getElementById('backgroundCheckBtn').onclick = function () {
-        showExecResult('check.php?backgroundMode=true', () => showModal('live', popup = false), fullSize = false);
-    };
-
-    // 清除结果
-    document.getElementById('cleanCheckResultBtn').onclick = function () {
-        showExecResult('check.php?cleanMode=true', () => showModal('live', popup = false), fullSize = false);
     };
 }
 
@@ -844,9 +1115,9 @@ function cleanUnusedSource() {
 
 // 显示直播源地址
 function showLiveUrl(token, serverUrl, tokenRange) {
-    var tokenStr = (tokenRange == 1 || tokenRange == 3) ? `token=${token}&` : '';
-    var m3uUrl = `${serverUrl}/index.php?${tokenStr}live=m3u`;
-    var txtUrl = `${serverUrl}/index.php?${tokenStr}live=txt`;
+    var tokenStr = (tokenRange == 1 || tokenRange == 3) ? `?token=${token}` : '';
+    var m3uUrl = `${serverUrl}/tv.m3u${tokenStr}`;
+    var txtUrl = `${serverUrl}/tv.txt${tokenStr}`;
     message = `M3U：<br><a href="${m3uUrl}" target="_blank">${m3uUrl}</a>
                 &ensp;<a href="${m3uUrl}" download="tv.m3u">下载</a><br>
                 TXT：<br><a href="${txtUrl}" target="_blank">${txtUrl}</a>
@@ -963,7 +1234,7 @@ function filterChannels(type) {
                 row.innerHTML = `<td class="blue-span" 
                                     onclick="showModal('epg', true, { channel: '${item.original}', date: '${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })}' })">
                                     ${item.original} </td>
-                                <td contenteditable="true">${item.mapped || ''}</td>`;
+                                <td contenteditable="true">${(item.mapped || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`;
                 row.querySelector('td[contenteditable]').addEventListener('input', function() {
                     item.mapped = this.textContent.trim();
                     document.getElementById(tableId).dataset[dataAttr] = JSON.stringify(allData);
@@ -1120,20 +1391,18 @@ function deleteUnusedIcons() {
 
 // 更新频道别名
 function updateChannelMapping() {
-    var allChannels = JSON.parse(document.getElementById('channelTable').dataset.allChannels);
-    var existingMappings = document.getElementById('channel_mappings').value.split('\n');
-
-    // 过滤出现有映射中的正则表达式映射
-    var regexMappings = existingMappings.filter(line => line.includes('regex:'));
-
-    // 生成新的频道别名映射
-    var newMappings = allChannels
-        .filter(channel => channel.mapped.trim() !== '')
-        .map(channel => `${channel.original} => ${channel.mapped}`);
-
-    // 更新映射文本框并保存配置
-    document.getElementById('channel_mappings').value = [...newMappings, ...regexMappings].join('\n');
-    updateConfig();
+    const allChannels = JSON.parse(document.getElementById('channelTable').dataset.allChannels);
+    const channelMappings = document.getElementById('channel_mappings');
+    const map = allChannels.filter(c => c.original !== '【频道忽略字符】' && c.mapped.trim())
+                           .map(c => `${c.original} => ${c.mapped}`);
+    const regex = channelMappings.value.split('\n').filter(l => l.includes('regex:'));
+    const ignore = allChannels.find(c => c.original === '【频道忽略字符】');
+    const done = () => { channelMappings.value = [...map, ...regex].join('\n'); updateConfig(); };
+    ignore ? fetch('manage.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({update_config_field: 'true', channel_ignore_chars: ignore.mapped.trim()})
+    }).then(done).catch(console.error) : done();
 }
 
 // 解析 txt、m3u 直播源，并生成频道列表（仅频道）
@@ -1152,7 +1421,7 @@ async function parseSource() {
             text = '';
             for (let url of urls) {
                 try {
-                    const response = await fetch('manage.php?download_data=true&url=' + encodeURIComponent(url));
+                    const response = await fetch('manage.php?download_source_data=true&url=' + encodeURIComponent(url));
                     const result = await response.json(); // 解析 JSON 响应
                     
                     if (result.success && !/not found/i.test(result.data)) {
@@ -1204,6 +1473,8 @@ function parseSourceInfo(message = '') {
         }
     })
     .catch(error => showMessageModal('解析过程中发生错误：' + error));
+
+    document.getElementById('liveSourceSearchInput').value = ''; // 清空搜索框内容
 }
 
 // 保存限定频道列表
@@ -1293,11 +1564,11 @@ document.getElementById('importFile').addEventListener('change', function() {
 // 修改 token、user_agent 对话框
 function changeTokenUA(type, currentTokenUA) {
     showMessageModal('');
-    typeStr = (type === 'token' ? 'Token' : 'User-Agent') + '<br>支持多个，逗号分隔';
+    typeStr = (type === 'token' ? 'Token' : 'User-Agent') + '<br>支持多个，每行一个';
     document.getElementById('messageModalMessage').innerHTML = `
-        <div style="width: 180px;">
+        <div style="width: 450px;">
             <h3>修改 ${typeStr}</h3>
-            <input type="text" value="${currentTokenUA}" id="newTokenUA" style="text-align: center; font-size: 15px; margin-bottom: 15px;" />
+            <textarea id="newTokenUA" style="min-height: 250px; margin-bottom: 15px;">${currentTokenUA}</textarea>
             <button onclick="updateTokenUA('${type}')" style="margin-bottom: -10px;">确认</button>
         </div>
     `;
@@ -1305,7 +1576,7 @@ function changeTokenUA(type, currentTokenUA) {
 
 // 更新 token、user_agent 到 config.json
 function updateTokenUA(type) {
-    var newTokenUA = document.getElementById('newTokenUA').value.replace(/，/g, ","); // 将中文逗号替换为英文逗号
+    var newTokenUA = document.getElementById('newTokenUA').value;
 
     // 内容写入 config.json 文件
     fetch('manage.php', {
@@ -1325,7 +1596,7 @@ function updateTokenUA(type) {
             }
             else {
                 showMessageModal('修改成功');
-                document.getElementById('change_ua_span').setAttribute('onclick', `changeTokenUA('user_agent', '${newTokenUA}')`);
+                document.getElementById('change_ua_span').setAttribute('onclick', `changeTokenUA('user_agent', '${newTokenUA.replace(/\n/g, "\\n")}')`);
             }
         } else {
             showMessageModal('修改失败');
@@ -1338,20 +1609,28 @@ function updateTokenUA(type) {
 function showTokenRangeMessage(token, serverUrl) {
     var tokenRange = document.getElementById("token_range").value;
     var message = '';
-    var baseUrl = serverUrl + '/index.php?token=' + token;
+    token = token.split('\n')[0];
     if (tokenRange == "1" || tokenRange == "3") {
-        message += `直播源地址：<br><a href="${baseUrl}&live=m3u" target="_blank">${baseUrl}&live=m3u</a><br>
-                    <a href="${baseUrl}&live=txt" target="_blank">${baseUrl}&live=txt</a>`;
+        message += `直播源地址：<br><a href="${serverUrl}/tv.m3u?token=${token}" target="_blank">${serverUrl}/tv.m3u?token=${token}</a><br>
+                    <a href="${serverUrl}/tv.txt?token=${token}" target="_blank">${serverUrl}/tv.txt?token=${token}</a>`;
     }
     if (tokenRange == "2" || tokenRange == "3") {
         if (message) message += '<br>';
-        message += `EPG地址：<br><a href="${baseUrl}" target="_blank">${baseUrl}</a>`;
+        message += `EPG地址：<br><a href="${serverUrl}/index.php?token=${token}" target="_blank">${serverUrl}/index.php?token=${token}</a><br>
+                    <a href="${serverUrl}/t.xml?token=${token}" target="_blank">${serverUrl}/t.xml?token=${token}</a><br>
+                    <a href="${serverUrl}/t.xml.gz?token=${token}" target="_blank">${serverUrl}/t.xml.gz?token=${token}</a>`;
     }
     if (message) {
         showMessageModal(message);
     }
     document.getElementById('showLiveUrlBtn').setAttribute('onclick', `showLiveUrl('${token}', '${serverUrl}', '${tokenRange}')`);
 }
+
+// 监听 debug_mode 更变
+document.getElementById("debug_mode").addEventListener("change", function () {
+    const show = this.value === "1";
+    document.getElementById("accessLogBtn").style.display = show ? "inline-block" : "none";
+});
 
 // 切换主题
 document.getElementById('themeSwitcher').addEventListener('click', function() {

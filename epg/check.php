@@ -9,7 +9,7 @@ if (!(isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_RE
 // 检测 ffmpeg 是否安装
 if (!shell_exec('which ffprobe')) {
     echo '<p>未检测到 ffmpeg 环境，请使用以下指令重新部署：
-        <br>docker run -e ENABLE_FFMPEG=true -d --name php-epg -p 5678:80 --restart always taksss/php-epg:latest</p>';
+        <br>docker rm php-epg -f && docker run -d --name php-epg -v /etc/epg:/htdocs/data -p 5678:80 -e ENABLE_FFMPEG=true --restart unless-stopped taksss/php-epg:latest</p>';
     exit;
 }
 
@@ -28,15 +28,26 @@ ob_implicit_flush(true);
 // 设置 header，防止浏览器缓存输出
 header('X-Accel-Buffering: no');
 
+// 引入公共脚本
+require_once 'public.php';
+
+// 读取 Config 文件
+$checkIPv6 = $Config['check_ipv6'] ?? 0;
+$minWidth = $Config['min_resolution_width'] ?? 0;
+$minHeight = $Config['min_resolution_height'] ?? 0;
+$urlsLimit = $Config['urls_limit'] ?? 0;
+$sortByDelay = $Config['sort_by_delay'] ?? 0;
+
 // 文件路径
-$channelsFile = 'data/live/channels.csv';
-$channelsInfoFile = 'data/live/channels_info.csv';
+$channelsFilePath = $liveDir . 'channels.csv';
+$channelsBackFilePath = $liveDir . 'channels_orig.csv';
+$channelsInfoFilePath = $liveDir . 'channels_info.csv';
 
 // cleanMode 参数为 true 时，清除测速数据
 if (isset($_GET['cleanMode']) && $_GET['cleanMode'] === 'true') {
     // 读取 channels_info.csv 文件
-    if (!file_exists($channelsInfoFile)) die('channels_info.csv 文件不存在');
-    $channelsInfo = array_map('str_getcsv', file($channelsInfoFile));
+    if (!file_exists($channelsInfoFilePath)) die('channels_info.csv 文件不存在');
+    $channelsInfo = array_map('str_getcsv', file($channelsInfoFilePath));
     $infoHeaders = array_shift($channelsInfo);
     $tagIndex = array_search('tag', $infoHeaders);
     $speedIndex = array_search('speed', $infoHeaders);
@@ -44,8 +55,8 @@ if (isset($_GET['cleanMode']) && $_GET['cleanMode'] === 'true') {
     if ($tagIndex === false || $speedIndex === false) die('channels_info.csv 文件缺少字段');
 
     // 读取 channels.csv 文件
-    if (!file_exists($channelsFile)) die('channels.csv 文件不存在');
-    $channels = array_map('str_getcsv', file($channelsFile));
+    if (!file_exists($channelsFilePath)) die('channels.csv 文件不存在');
+    $channels = array_map('str_getcsv', file($channelsFilePath));
     $headers = array_shift($channels);
     $disableIndex = array_search('disable', $headers);
     $modifiedIndex = array_search('modified', $headers);
@@ -66,14 +77,14 @@ if (isset($_GET['cleanMode']) && $_GET['cleanMode'] === 'true') {
 
     // 重新写回更新后的 channels.csv 文件
     array_unshift($channels, $headers);
-    $fileHandle = fopen($channelsFile, 'w');
-    foreach ($channels as $channel) {
+    $fileHandle = fopen($channelsFilePath, 'w');
+    foreach ($channels as &$channel) {
         fputcsv($fileHandle, $channel);
     }
     fclose($fileHandle);
 
     // 仅清空 channels_info.csv 中的数据，保留表头
-    $fileHandle = fopen($channelsInfoFile, 'w');
+    $fileHandle = fopen($channelsInfoFilePath, 'w');
     fputcsv($fileHandle, $infoHeaders); // 写入表头
     fclose($fileHandle);
 
@@ -83,9 +94,11 @@ if (isset($_GET['cleanMode']) && $_GET['cleanMode'] === 'true') {
 
 echo '<strong><span style="color: red;">前台测速过程中请勿关闭浏览器</span></strong><br><br>';
 
-// 读取 channels.csv 文件并解析
-if (!file_exists($channelsFile)) die('channels.csv 文件不存在');
-$channels = array_map('str_getcsv', file($channelsFile));
+// 如果备份文件不存在，尝试从原文件创建备份
+if (!file_exists($channelsBackFilePath) && !copy($channelsFilePath, $channelsBackFilePath)) {
+    die('无法创建 channels_orig.csv 备份文件');
+}
+$channels = array_map('str_getcsv', file($channelsBackFilePath));
 
 // 提取表头，定位 streamUrl 和 tag 索引
 $headers = array_shift($channels);
@@ -95,7 +108,7 @@ $channelNameIndex = array_search('channelName', $headers);
 
 // 确保必要字段存在
 if ($streamUrlIndex === false || $tagIndex === false) {
-    die('channels.csv 文件缺少必要字段');
+    die('channels_orig.csv 文件缺少必要字段');
 }
 
 // 确保 disable 和 modified 字段存在
@@ -105,19 +118,22 @@ foreach (['disable', 'modified'] as $field) {
     }
 }
 
-// 准备 channels_info.csv 数据
 $infoHeaders = ['tag', 'resolution', 'speed'];
-$infoData = [];
-
-// 写入 channels_info.csv 文件
-$fileHandle = fopen($channelsInfoFile, 'w');
-fputcsv($fileHandle, $infoHeaders);
-
-// 遍历频道并检测分辨率和速度
 $total = count($channels);
+$channelsInfoMap = [];
+
+// 只读取一次已有的 channels_info.csv
+$infoData = [];
+if (file_exists($channelsInfoFilePath)) {
+    $rows = array_map('str_getcsv', file($channelsInfoFilePath));
+    array_shift($rows); // 去掉表头
+    foreach ($rows as $row) {
+        $infoData[$row[0]] = [$row[1], $row[2]];
+    }
+}
+
 foreach ($channels as $i => $channel) {
-    $streamUrl = $channel[$streamUrlIndex];
-    $streamUrl = strtok($streamUrl, '$'); // 处理带有 $ 的 URL
+    $streamUrl = strtok($channel[$streamUrlIndex], '$'); // 处理带有 $ 的 URL
     $tag = $channel[$tagIndex];
     $channelName = $channelNameIndex !== false ? $channel[$channelNameIndex] : '未知频道';
 
@@ -126,11 +142,17 @@ foreach ($channels as $i => $channel) {
 
     echo "(" . ($i + 1) . "/{$total}): {$channelName} - {$streamUrl}<br>";
 
+    // 跳过 IPv6 源
+    if ($checkIPv6 === 0 && preg_match('#^https?://\[[a-f0-9:]+\]#i', $streamUrl)) {
+        echo '<strong><span style="color: red;">跳过 IPv6 源</span></strong><br><br>';
+        continue;
+    }
+
     // 使用 ffprobe 直接测量访问速度
     $startTime = microtime(true);
     $cmd = "ffprobe -rw_timeout 2000000 -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"{$streamUrl}\"";
     exec($cmd, $output, $returnVar);
-    $duration = microtime(true) - $startTime;
+    $duration = round((microtime(true) - $startTime) * 1000);
 
     // 初始化字段索引
     $disableIndex = array_search('disable', $headers);
@@ -138,13 +160,12 @@ foreach ($channels as $i => $channel) {
 
     // 如果 ffprobe 执行失败，访问速度设为 "N/A"，并设置 disable 和 modified 为 1
     if ($returnVar !== 0) {
-        $speed = 'N/A';
-        $resolution = 'N/A';
+        $resolution = $speed = 'N/A';
         $channel[$disableIndex] = '1';
         $channel[$modifiedIndex] = '1';
-        echo '<strong><span style="color: red;">无法获取流信息，已标记为停用</span></strong><br><br>';
+        echo '<strong><span style="color: red;">无法获取流信息，已停用</span></strong><br><br>';
     } else {
-        $speed = round($duration * 1000, 0);
+        $speed = $duration;
         $resolution = 'N/A';
         $channel[$disableIndex] = '0'; // 访问成功，清除禁用标志
         $channel[$modifiedIndex] = '0';
@@ -154,25 +175,75 @@ foreach ($channels as $i => $channel) {
             if (strpos($line, ',') !== false) {
                 list($width, $height) = array_pad(explode(',', $line), 2, '未知');
                 $resolution = "{$width}x{$height}";
+                if ($width < $minWidth || $height < $minHeight) {
+                    $channel[$disableIndex] = '1';
+                    $channel[$modifiedIndex] = '1';
+                    echo "<strong><span style='color: red;'>分辨率不满足 {$minWidth}x{$minHeight}，已停用</span></strong><br>";
+                    break;
+                }
             }
         }
 
         echo "分辨率: {$resolution}, 访问速度: {$speed} ms<br><br>";
     }
 
-    // 保存到 channels_info.csv 数据
-    $infoRow = [$tag, $resolution, $speed];
-    fputcsv($fileHandle, $infoRow);
-
-    // 更新 channels
+    // 更新内存映射及写入文件
+    $infoData[$tag] = [$resolution, $speed];
+    $channelsInfoMap[$tag] = is_numeric($speed) ? (int)$speed : PHP_INT_MAX;
     $channels[$i] = $channel;
+    $fileHandle = fopen($channelsInfoFilePath, 'w');
+    fputcsv($fileHandle, $infoHeaders);
+    foreach ($infoData as $t => [$res, $spd]) {
+        fputcsv($fileHandle, [$t, $res, $spd]);
+    }
+    fclose($fileHandle);
 }
-fclose($fileHandle);
-echo "检测完成，已生成 channels_info.csv 文件。<br>";
+
+echo "检测完成，已更新 channels_info.csv 文件。<br>";
+
+// 按响应速度排序
+if ($sortByDelay == 1) {
+    $channelNameIndex = array_search('channelName', $headers);
+    $tagIndex = array_search('tag', $headers);
+
+    // 按频道名称分组
+    $groupedChannels = [];
+    foreach ($channels as $channel) {
+        $groupedChannels[$channel[$channelNameIndex]][] = $channel;
+    }
+
+    // 对每个分组进行排序
+    foreach ($groupedChannels as &$group) {
+        usort($group, function ($a, $b) use ($channelsInfoMap, $tagIndex) {
+            return ($channelsInfoMap[$a[$tagIndex]] ?? PHP_INT_MAX-1) <=> ($channelsInfoMap[$b[$tagIndex]] ?? PHP_INT_MAX-1);
+        });
+    }
+    unset($group); // 避免引用问题
+
+    // 合并回 channels
+    $channels = array_merge(...array_values($groupedChannels));
+}
+
+// 单个频道接口数量限制
+if ($urlsLimit > 0) {
+    $counts = [];
+    $channels = array_filter($channels, function($channel) use (&$counts, $channelNameIndex, $urlsLimit) {
+        $name = $channel[$channelNameIndex] ?? '';
+        $counts[$name] = ($counts[$name] ?? 0) + 1;
+        return $counts[$name] <= $urlsLimit;
+    });
+}
+
+// 重新生成 M3U 和 TXT 文件
+$channelsData = [];
+foreach ($channels as $row) {
+    $channelsData[] = array_combine($headers, $row);
+}
+generateLiveFiles($channelsData, 'tv', $saveOnly = true);
 
 // 重新写回 channels.csv 文件
 array_unshift($channels, $headers);
-$fileHandle = fopen($channelsFile, 'w');
+$fileHandle = fopen($channelsFilePath, 'w');
 foreach ($channels as $channel) {
     fputcsv($fileHandle, $channel);
 }
